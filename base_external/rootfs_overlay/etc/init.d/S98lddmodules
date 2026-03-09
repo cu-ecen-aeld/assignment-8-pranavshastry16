@@ -2,99 +2,69 @@
 #
 # S98lddmodules
 #
-# SysV init script to automatically load and unload
-# Linux Device Driver (LDD) modules at boot and shutdown.
+# SysV init script for Assignment 8.
 #
-# Modules handled:
-#   - scull   (Simple Character Utility for Loading Localities)
-#   - faulty  (Intentional fault driver for oops demonstration)
-#   - hello   (Personalized hello printk module)
+# Purpose:
+#   - Load the aesdchar kernel module at boot
+#   - Create /dev/aesdchar if needed
+#   - Set permissions so testing is easier
+#   - Unload the module at shutdown
 #
-# This script is installed via rootfs overlay and executed
-# automatically during system startup (S98 ordering).
+# Why S98?
+#   - This runs late in boot, after most of the system is up
+#   - We want the kernel module loaded before aesdsocket starts
 #
 
 case "$1" in
-  start)
-    echo "Loading LDD modules..."
+    start)
+        echo "Loading aesdchar module..."
 
-    #
-    # Load scull module
-    # scull creates /dev/scull* character devices
-    #
-    if [ -f /lib/modules/$(uname -r)/extra/scull.ko ]; then
-      # Load directly if installed in extra directory
-      insmod /lib/modules/$(uname -r)/extra/scull.ko || true
-    else
-      # Otherwise attempt modprobe (uses module dependency tree)
-      modprobe scull || true
-    fi
-          #
-    # Create /dev/scull* device nodes (Buildroot often does not auto-create these)
-    #
-    SCULL_MAJOR=$(awk '$2=="scull" {print $1}' /proc/devices)
-    if [ -n "$SCULL_MAJOR" ]; then
-      mknod /dev/scull0 c $SCULL_MAJOR 0 2>/dev/null
-      mknod /dev/scull1 c $SCULL_MAJOR 1 2>/dev/null
-      mknod /dev/scull2 c $SCULL_MAJOR 2 2>/dev/null
-      mknod /dev/scull3 c $SCULL_MAJOR 3 2>/dev/null
-      chmod 666 /dev/scull* 2>/dev/null
-    fi
+        #
+        # If Buildroot installed the module in the usual "extra" directory,
+        # load it directly with insmod.
+        #
+        if [ -f /lib/modules/$(uname -r)/extra/aesdchar.ko ]; then
+            insmod /lib/modules/$(uname -r)/extra/aesdchar.ko || true
+        else
+            #
+            # Otherwise try modprobe, which consults module metadata.
+            #
+            modprobe aesdchar || true
+        fi
 
-    #
-    # Load faulty module
-    # faulty creates /dev/faulty and intentionally triggers a kernel oops
-    # when written to (used for assignment debugging analysis)
-    #
-    if [ -f /lib/modules/$(uname -r)/extra/faulty.ko ]; then
-      insmod /lib/modules/$(uname -r)/extra/faulty.ko || true
-    else
-      modprobe faulty || true
-    fi
-    #
-    # Create /dev/faulty device node
-    #
-    FAULTY_MAJOR=$(awk '$2=="faulty" {print $1}' /proc/devices)
-    if [ -n "$FAULTY_MAJOR" ]; then
-      mknod /dev/faulty c $FAULTY_MAJOR 0 2>/dev/null
-      chmod 666 /dev/faulty 2>/dev/null
-    fi
+        #
+        # Create the /dev/aesdchar character device node manually.
+        # Buildroot images do not always auto-create custom device nodes.
+        #
+        AESDCHAR_MAJOR=$(awk '$2=="aesdchar" {print $1}' /proc/devices)
 
+        if [ -n "$AESDCHAR_MAJOR" ]; then
+            mknod /dev/aesdchar c $AESDCHAR_MAJOR 0 2>/dev/null
+            chmod 666 /dev/aesdchar 2>/dev/null
+        fi
+        ;;
 
-    #
-    # Load hello module
-    # This prints a personalized message to the kernel log
-    #
-    modprobe hello || true
-    ;;
+    stop)
+        echo "Unloading aesdchar module..."
 
-  stop)
-    echo "Unloading LDD modules..."
+        #
+        # Suppress error if module is already removed or was never loaded.
+        #
+        rmmod aesdchar 2>/dev/null || true
+        ;;
 
-    #
-    # Unload in reverse order of dependency
-    # Suppress errors if module already removed
-    #
-    rmmod hello 2>/dev/null || true
-    rmmod faulty 2>/dev/null || true
-    rmmod scull  2>/dev/null || true
-    ;;
+    restart)
+        #
+        # Standard SysV restart behavior
+        #
+        $0 stop
+        $0 start
+        ;;
 
-  restart)
-    #
-    # Restart simply stops then starts the modules
-    #
-    $0 stop
-    $0 start
-    ;;
-
-  *)
-    #
-    # Invalid usage handler
-    #
-    echo "Usage: $0 {start|stop|restart}"
-    exit 1
-    ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
 esac
 
 exit 0
